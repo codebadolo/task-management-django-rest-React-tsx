@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: project_management_web
+    command: >
+      sh -c "
+             python manage.py makemigrations utilisateurs --noinput &&
+             python manage.py makemigrations taches --noinput &&
+             python manage.py migrate --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=1
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_NAME=/app/db.sqlite3
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - project_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: project_management_redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - project_network
+
+  # Service pour les migrations uniquement (optionnel)
+  migrate:
+    build: .
+    container_name: project_management_migrate
+    command: >
+      sh -c "python manage.py wait_for_db &&
+             python manage.py makemigrations utilisateurs --noinput &&
+             python manage.py makemigrations taches --noinput &&
+             python manage.py migrate --noinput"
+    volumes:
+      - .:/app
+    environment:
+      - DEBUG=1
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_NAME=/app/db.sqlite3
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - project_network
+    profiles:
+      - migrate
+
+  # Service pour créer un superutilisateur
+  
+
+  # Service pour les commandes Django personnalisées
+  django-shell:
+    build: .
+    container_name: project_management_shell
+    command: python manage.py shell
+    volumes:
+      - .:/app
+    environment:
+      - DEBUG=1
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_NAME=/app/db.sqlite3
+    env_file:
+      - .env
+    depends_on:
+      - web
+    networks:
+      - project_network
+    stdin_open: true
+    tty: true
+    profiles:
+      - shell
+
+networks:
+  project_network:
+    driver: bridge
+
+volumes:
+  redis_data:
